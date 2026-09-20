@@ -89,7 +89,21 @@ export default function LobbyPage() {
           },
           (payload) => setGame(payload.new as Game)
         )
-        .subscribe();
+        .subscribe((status, err) => {
+          // Realtime subscriptions fail silently by default -- without this,
+          // a broken WebSocket connection looks identical (from the UI) to a
+          // slow one, and the only symptom is "nothing updates until I
+          // refresh." Logging the status makes that failure visible.
+          if (status === "SUBSCRIBED") {
+            console.log("[Cricattax] Realtime connected:", gameRow.id);
+          } else if (
+            status === "CHANNEL_ERROR" ||
+            status === "TIMED_OUT" ||
+            status === "CLOSED"
+          ) {
+            console.error("[Cricattax] Realtime subscription problem:", status, err);
+          }
+        });
     })();
 
     return () => {
