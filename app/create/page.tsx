@@ -16,6 +16,7 @@ export default function CreateGamePage() {
   const router = useRouter();
   const [numPlayers, setNumPlayers] = useState(4);
   const [hintPurse, setHintPurse] = useState(20);
+  const [numRounds, setNumRounds] = useState(25);
   const [hostTeamName, setHostTeamName] = useState("");
   const [error, setError] = useState("");
   const [submitting, setSubmitting] = useState(false);
@@ -28,7 +29,7 @@ export default function CreateGamePage() {
       const res = await fetch("/api/games", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ numPlayers, hintPurse, hostTeamName }),
+        body: JSON.stringify({ numPlayers, hintPurse, numRounds, hostTeamName }),
       });
       const data = await res.json();
       if (!res.ok) {
@@ -95,6 +96,37 @@ export default function CreateGamePage() {
                 onChange={(e) => setHintPurse(Number(e.target.value))}
                 required
               />
+            </div>
+
+            <div>
+              <FieldLabel>Squad size / number of rounds</FieldLabel>
+              <TextInput
+                type="number"
+                min={1}
+                max={25}
+                value={numRounds}
+                onChange={(e) => setNumRounds(Number(e.target.value))}
+                required
+              />
+              <div className="mt-2 flex gap-2">
+                {[3, 11, 25].map((n) => (
+                  <button
+                    type="button"
+                    key={n}
+                    onClick={() => setNumRounds(n)}
+                    className={`rounded border px-3 py-1 font-body text-xs uppercase tracking-wide transition ${
+                      numRounds === n
+                        ? "border-gold bg-gold text-stock"
+                        : "border-silver/30 text-silver/60 hover:border-gold/50"
+                    }`}
+                  >
+                    {n === 25 ? "Full (25)" : `Quick (${n})`}
+                  </button>
+                ))}
+              </div>
+              <p className="mt-1 font-body text-xs text-silver/50">
+                A real game is 25. Use a smaller number for a quick test draft.
+              </p>
             </div>
 
             <ErrorText>{error}</ErrorText>
