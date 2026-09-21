@@ -37,11 +37,27 @@ create table if not exists games (
   room_code           text not null unique,     -- short shareable code, e.g. "K7QX2P"
   num_players         int not null check (num_players between 2 and 5),
   default_hint_purse  int not null default 20,
+  num_rounds          int not null default 25 check (num_rounds between 1 and 25),  -- host-configurable at creation, so testing can use a short draft (e.g. 3) instead of a full 25
   current_round       int not null default 0,
   pick_order          jsonb not null default '[]'::jsonb,  -- ordered list of participant ids for the current round
   status              text not null default 'lobby' check (status in ('lobby', 'drafting', 'complete')),
   created_at          timestamptz not null default now()
 );
+
+-- Migration: the num_rounds column above was added after this table was
+-- first deployed to some environments. This block is a no-op on a fresh
+-- database (the create table above already has the column) and safely
+-- backfills it on a database that predates it -- re-run the whole file any
+-- time without worrying about which case you're in.
+alter table games add column if not exists num_rounds int not null default 25;
+do $$
+begin
+  if not exists (
+    select 1 from pg_constraint where conname = 'games_num_rounds_check'
+  ) then
+    alter table games add constraint games_num_rounds_check check (num_rounds between 1 and 25);
+  end if;
+end $$;
 
 create table if not exists participants (
   id                      uuid primary key default gen_random_uuid(),
