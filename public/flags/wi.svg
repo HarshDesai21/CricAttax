@@ -1,8 +1,0 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 60 36">
-  <!-- West Indies placeholder -- deliberately a plain maroon field with no
-       crest. The real Cricket West Indies flag carries the board's own
-       logo, which may be a trademark rather than a plain national flag, so
-       this stands in until the user supplies a licensed image. Swap this
-       file directly (same filename, same viewBox) once that's available. -->
-  <rect width="60" height="36" fill="#7A0019"/>
-</svg>
