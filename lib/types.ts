@@ -5,9 +5,44 @@ export interface Game {
   room_code: string;
   num_players: number;
   default_hint_purse: number;
+  num_rounds: number;
   current_round: number;
   pick_order: string[];
   status: GameStatus;
+  created_at: string;
+}
+
+export type PlayerRole = "Batter" | "Bowler" | "All-Rounder" | "WK-Batter";
+
+export interface Player {
+  id: number;
+  short_name: string;
+  full_name: string;
+  country: string;
+  is_overseas: boolean;
+  role: PlayerRole;
+  position: string | null;
+  batting_avg: number | null;
+  bowling_avg: number | null;
+}
+
+export type RoundCardStatus = "hidden" | "picked";
+
+// The public-safe shape of a mystery card. `player_id` (and everything
+// about the player) stays null until the server reveals it -- see the
+// design doc's server-side masking split. `picked_by_participant_id` being
+// set just means "someone has claimed this slot," which is intentionally
+// visible in real time even while the card's contents are still hidden.
+export interface RoundCard {
+  id: string;
+  game_id: string;
+  round_number: number;
+  slot_index: number;
+  player_id: number | null;
+  status: RoundCardStatus;
+  picked_by_participant_id: string | null;
+  hint_tier_spent: number;
+  picked_at: string | null;
   created_at: string;
 }
 
