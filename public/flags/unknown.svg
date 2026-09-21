@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 60 36">
+  <!-- Fallback shown only if a player's `country` value doesn't match
+       anything in lib/countryFlags.ts -- a plain neutral banner rather than
+       a broken image, so a data mismatch is visible but not ugly. -->
+  <rect width="60" height="36" fill="#3a3f47"/>
+  <text x="30" y="23" font-family="sans-serif" font-size="14" fill="#cdd3db" text-anchor="middle">?</text>
+</svg>
