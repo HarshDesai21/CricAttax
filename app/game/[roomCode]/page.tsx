@@ -4,7 +4,7 @@ import { useEffect, useState, useCallback } from "react";
 import { useParams } from "next/navigation";
 import { supabase } from "@/lib/supabase/client";
 import { loadSession, saveSession } from "@/lib/session";
-import type { Game, Participant, StoredSession } from "@/lib/types";
+import type { Game, Participant, Player, RoundCard, StoredSession } from "@/lib/types";
 import {
   Heading,
   Panel,
@@ -14,6 +14,7 @@ import {
   ErrorText,
   RoomCodeBadge,
 } from "@/components/ui";
+import { DraftBoard } from "@/components/DraftBoard";
 
 export default function LobbyPage() {
   const params = useParams<{ roomCode: string }>();
@@ -32,6 +33,15 @@ export default function LobbyPage() {
   const [joining, setJoining] = useState(false);
   const [starting, setStarting] = useState(false);
 
+  // Draft state -- only populated once the game leaves 'lobby'. roundCards
+  // holds every round's cards for the whole game (cheap at this scale,
+  // <=125 rows), filtered down to the current round at render time so a
+  // stale closure over "current round" can't get this out of sync.
+  const [roundCards, setRoundCards] = useState<RoundCard[]>([]);
+  const [playersCache, setPlayersCache] = useState<Map<number, Player>>(new Map());
+  const [picking, setPicking] = useState(false);
+  const [pickError, setPickError] = useState("");
+
   const loadParticipants = useCallback(async (gameId: string) => {
     const { data } = await supabase
       .from("participants")
@@ -39,6 +49,16 @@ export default function LobbyPage() {
       .eq("game_id", gameId)
       .order("seat_number", { ascending: true });
     setParticipants((data as Participant[]) ?? []);
+  }, []);
+
+  const loadRoundCards = useCallback(async (gameId: string) => {
+    const { data } = await supabase
+      .from("round_cards")
+      .select("*")
+      .eq("game_id", gameId)
+      .order("round_number", { ascending: true })
+      .order("slot_index", { ascending: true });
+    setRoundCards((data as RoundCard[]) ?? []);
   }, []);
 
   useEffect(() => {
@@ -65,6 +85,9 @@ export default function LobbyPage() {
       }
       setGame(gameRow as Game);
       await loadParticipants(gameRow.id);
+      if (gameRow.status !== "lobby") {
+        await loadRoundCards(gameRow.id);
+      }
       setLoading(false);
 
       channel = supabase
@@ -87,7 +110,21 @@ export default function LobbyPage() {
             table: "games",
             filter: `id=eq.${gameRow.id}`,
           },
-          (payload) => setGame(payload.new as Game)
+          (payload) => {
+            const updated = payload.new as Game;
+            setGame(updated);
+            if (updated.status !== "lobby") loadRoundCards(gameRow.id);
+          }
+        )
+        .on(
+          "postgres_changes",
+          {
+            event: "*",
+            schema: "public",
+            table: "round_cards",
+            filter: `game_id=eq.${gameRow.id}`,
+          },
+          () => loadRoundCards(gameRow.id)
         )
         .subscribe((status, err) => {
           // Realtime subscriptions fail silently by default -- without this,
@@ -109,7 +146,32 @@ export default function LobbyPage() {
     return () => {
       if (channel) supabase.removeChannel(channel);
     };
-  }, [roomCode, loadParticipants]);
+  }, [roomCode, loadParticipants, loadRoundCards]);
+
+  // Backfills real player details for any newly-revealed cards. round_cards
+  // itself only ever carries a player_id -- the name/country/role/averages
+  // live in the public `players` table, fetched here in batches keyed off
+  // whatever ids we haven't already cached.
+  useEffect(() => {
+    const revealedIds = [
+      ...new Set(
+        roundCards
+          .filter((c) => c.player_id != null)
+          .map((c) => c.player_id as number)
+      ),
+    ];
+    const missing = revealedIds.filter((id) => !playersCache.has(id));
+    if (missing.length === 0) return;
+    (async () => {
+      const { data } = await supabase.from("players").select("*").in("id", missing);
+      if (!data) return;
+      setPlayersCache((prev) => {
+        const next = new Map(prev);
+        for (const p of data as Player[]) next.set(p.id, p);
+        return next;
+      });
+    })();
+  }, [roundCards, playersCache]);
 
   async function handleJoin(e: React.FormEvent) {
     e.preventDefault();
@@ -140,6 +202,31 @@ export default function LobbyPage() {
       setError("Network error -- try again");
     } finally {
       setJoining(false);
+    }
+  }
+
+  async function handlePick(slotIndex: number) {
+    if (!session) return;
+    setPickError("");
+    setPicking(true);
+    try {
+      const res = await fetch(`/api/games/${roomCode}/pick`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          participantId: session.participantId,
+          reconnectToken: session.reconnectToken,
+          slotIndex,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setPickError(data.error ?? "Failed to pick that card");
+      }
+    } catch {
+      setPickError("Network error -- try again");
+    } finally {
+      setPicking(false);
     }
   }
 
@@ -189,11 +276,25 @@ export default function LobbyPage() {
       </div>
 
       {game.status === "drafting" ? (
+        <DraftBoard
+          roundCards={roundCards.filter((c) => c.round_number === game.current_round)}
+          numPlayers={game.num_players}
+          numRounds={game.num_rounds}
+          currentRound={game.current_round}
+          pickOrder={game.pick_order}
+          players={playersCache}
+          participantNames={new Map(participants.map((p) => [p.id, p.team_name]))}
+          myParticipantId={session?.participantId ?? null}
+          onPick={handlePick}
+          picking={picking}
+          error={pickError}
+        />
+      ) : game.status === "complete" ? (
         <Panel className="w-full max-w-sm text-center">
-          <Heading className="mb-2 text-2xl">Draft starting...</Heading>
+          <Heading className="mb-2 text-2xl">Draft complete!</Heading>
           <p className="font-body text-silver/70">
-            The draft engine isn&apos;t built yet -- this is where the mystery
-            box reveal will begin.
+            Every round has been picked and revealed. The Playing XI builder
+            and trading aren&apos;t built yet -- that&apos;s next.
           </p>
         </Panel>
       ) : (
