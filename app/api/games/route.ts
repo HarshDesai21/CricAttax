@@ -6,11 +6,15 @@ import { generateRoomCode } from "@/lib/roomCode";
 const MIN_PLAYERS = 2;
 const MAX_PLAYERS = 5;
 const DEFAULT_HINT_PURSE = 20;
+const DEFAULT_NUM_ROUNDS = 25;
+const MIN_ROUNDS = 1;
+const MAX_ROUNDS = 25;
 const ROOM_CODE_ATTEMPTS = 8;
 
 interface CreateGameBody {
   numPlayers: number;
   hintPurse?: number;
+  numRounds?: number;
   hostTeamName: string;
 }
 
@@ -28,6 +32,7 @@ export async function POST(request: Request) {
 
   const { numPlayers, hostTeamName } = body;
   const hintPurse = body.hintPurse ?? DEFAULT_HINT_PURSE;
+  const numRounds = body.numRounds ?? DEFAULT_NUM_ROUNDS;
 
   if (
     typeof numPlayers !== "number" ||
@@ -51,6 +56,17 @@ export async function POST(request: Request) {
       { status: 400 }
     );
   }
+  if (
+    typeof numRounds !== "number" ||
+    !Number.isInteger(numRounds) ||
+    numRounds < MIN_ROUNDS ||
+    numRounds > MAX_ROUNDS
+  ) {
+    return NextResponse.json(
+      { error: `numRounds must be a whole number between ${MIN_ROUNDS} and ${MAX_ROUNDS}` },
+      { status: 400 }
+    );
+  }
 
   // Try a handful of random room codes until we land on one that isn't
   // already taken. Collisions are astronomically rare at this alphabet/
@@ -66,6 +82,7 @@ export async function POST(request: Request) {
         room_code: candidate,
         num_players: numPlayers,
         default_hint_purse: hintPurse,
+        num_rounds: numRounds,
       })
       .select("id, room_code")
       .single();
