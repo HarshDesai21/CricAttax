@@ -31,20 +31,35 @@ function weightedSampleWithoutReplacement<T>(
   return keyed.slice(0, count).map((k) => k.item);
 }
 
-// Starting multipliers from the design doc -- not final, just a documented
-// baseline pulled from the pool's real composition (443 Indian / 366
-// overseas, 79/809 keepers). Easy to retune once this is playtested.
-const INDIAN_WEIGHT = 1.5;
+// Reveal weighting v2 (design doc, iteration 2) -- retuned nationality tilt
+// plus a new player-tier dimension, layered on top of the unchanged role
+// tilt. All three dimensions multiply together, so an Indian marquee-tier
+// keeper stacks nationality x role x tier -- wider spread than before, and
+// intended: the goal is recognizable names surfacing noticeably more often
+// without ever being guaranteed (still a pool-level nudge, still sampled
+// without replacement, still leaves trading as the fix for genuine bad luck).
+const INDIAN_WEIGHT = 3;
 const OVERSEAS_WEIGHT = 1;
 const KEEPER_WEIGHT = 2;
 const OTHER_ROLE_WEIGHT = 1;
 
+// Popular and Random deliberately share the same weight -- kept as separate
+// tier labels for organizational clarity / future tuning room, not because
+// they currently behave differently in the sampler.
+const TIER_WEIGHT: Record<Player["tier"], number> = {
+  marquee: 4,
+  greats: 2.5,
+  popular: 2,
+  random: 2,
+};
+
 export function playerRevealWeight(
-  player: Pick<Player, "is_overseas" | "role">
+  player: Pick<Player, "is_overseas" | "role" | "tier">
 ): number {
   const nationalityWeight = player.is_overseas ? OVERSEAS_WEIGHT : INDIAN_WEIGHT;
   const roleWeight = player.role === "WK-Batter" ? KEEPER_WEIGHT : OTHER_ROLE_WEIGHT;
-  return nationalityWeight * roleWeight;
+  const tierWeight = TIER_WEIGHT[player.tier];
+  return nationalityWeight * roleWeight * tierWeight;
 }
 
 function shuffle<T>(items: T[]): T[] {
