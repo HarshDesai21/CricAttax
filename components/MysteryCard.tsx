@@ -3,6 +3,7 @@
 import Image from "next/image";
 import type { Player, PlayerRole } from "@/lib/types";
 import { flagAssetPath, countryCodeText } from "@/lib/countryFlags";
+import { displayName } from "@/lib/playerDisplay";
 
 // The locked card layout from the design doc: top-left flag + country code,
 // top-right plane icon (overseas only), center role emblem, bottom name/
@@ -18,6 +19,20 @@ const ROLE_EMBLEM: Record<PlayerRole, string> = {
 
 export type MysteryCardState = "hidden" | "claimed" | "revealed";
 
+// What a paid hint reveals about a still-hidden card -- private to whichever
+// browser actually paid for it (see the hint API route: this data is only
+// ever returned in that participant's own response, never broadcast via
+// Realtime), so there's no server-side "masking" concern here the way there
+// is for the real reveal -- a parent only ever hands this prop to its own
+// player's view of the board.
+export interface PrivateHint {
+  country: string;
+  role?: PlayerRole;
+  battingAvg?: number | null;
+  bowlingAvg?: number | null;
+  name?: string;
+}
+
 export interface MysteryCardProps {
   state: MysteryCardState;
   player?: Player | null;
@@ -25,6 +40,7 @@ export interface MysteryCardProps {
   isPickable?: boolean;
   onPick?: () => void;
   revealDelayMs?: number;
+  privateHint?: PrivateHint | null;
 }
 
 // Flip timing, tuned per feedback that the original 700ms/120ms-stagger felt
@@ -41,6 +57,7 @@ export function MysteryCard({
   isPickable = false,
   onPick,
   revealDelayMs = 0,
+  privateHint = null,
 }: MysteryCardProps) {
   const flipped = state === "revealed";
 
@@ -65,7 +82,7 @@ export function MysteryCard({
         }`}
         aria-label={
           state === "revealed" && player
-            ? `${player.full_name}, ${player.role}`
+            ? `${displayName(player)}, ${player.role}`
             : state === "claimed"
               ? `Claimed by ${claimedByTeamName ?? "another team"}`
               : "Mystery card"
@@ -99,6 +116,42 @@ export function MysteryCard({
               <span className="rounded bg-gold px-3 py-1 font-body text-xs font-semibold uppercase tracking-wide text-stock opacity-0 transition group-hover:opacity-100">
                 Pick
               </span>
+            </div>
+          )}
+
+          {/* Private hint overlay -- only ever rendered from data that came
+              back to THIS browser's own hint purchase, so it's naturally
+              private without any extra masking here: nobody else's card
+              ever receives a privateHint prop for this slot. */}
+          {state === "hidden" && privateHint && (
+            <div className="absolute inset-x-1 bottom-1 rounded bg-black/70 px-1.5 py-1 text-center ring-1 ring-gold/50">
+              <div className="flex items-center justify-center gap-1">
+                <div className="h-2.5 w-3.5 flex-shrink-0 overflow-hidden rounded-[2px]">
+                  <Image
+                    src={flagAssetPath(privateHint.country)}
+                    alt={privateHint.country}
+                    width={14}
+                    height={10}
+                    className="h-full w-full object-cover"
+                  />
+                </div>
+                <span className="font-body text-[8px] font-semibold tracking-wide text-gold-light">
+                  {countryCodeText(privateHint.country)}
+                  {privateHint.role ? ` · ${privateHint.role}` : ""}
+                </span>
+              </div>
+              {(privateHint.battingAvg != null || privateHint.bowlingAvg != null) && (
+                <p className="font-body text-[8px] text-silver/70">
+                  {privateHint.battingAvg != null ? `Bat ${privateHint.battingAvg}` : ""}
+                  {privateHint.battingAvg != null && privateHint.bowlingAvg != null ? " · " : ""}
+                  {privateHint.bowlingAvg != null ? `Bowl ${privateHint.bowlingAvg}` : ""}
+                </p>
+              )}
+              {privateHint.name && (
+                <p className="truncate font-display text-[9px] font-semibold text-gold-light">
+                  {privateHint.name}
+                </p>
+              )}
             </div>
           )}
         </div>
@@ -158,7 +211,7 @@ export function MysteryCard({
               {/* Bottom name/stat plate */}
               <div className="rounded bg-black/50 px-1.5 py-1 text-center">
                 <p className="truncate font-display text-[11px] font-semibold text-gold-light">
-                  {player.full_name}
+                  {displayName(player)}
                 </p>
                 <p className="font-body text-[9px] uppercase tracking-wide text-silver/70">
                   {player.role}
