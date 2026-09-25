@@ -16,6 +16,7 @@ interface CreateGameBody {
   hintPurse?: number;
   numRounds?: number;
   hostTeamName: string;
+  franchiseId?: string | null;
 }
 
 // Creates a new game (in 'lobby' status) with a unique room code, plus a
@@ -68,6 +69,21 @@ export async function POST(request: Request) {
     );
   }
 
+  const franchiseId = body.franchiseId?.trim() || null;
+  if (franchiseId) {
+    const { data: franchise, error: franchiseError } = await supabaseAdmin
+      .from("franchises")
+      .select("id")
+      .eq("id", franchiseId)
+      .maybeSingle();
+    if (franchiseError) {
+      return NextResponse.json({ error: franchiseError.message }, { status: 500 });
+    }
+    if (!franchise) {
+      return NextResponse.json({ error: "Unknown franchiseId" }, { status: 400 });
+    }
+  }
+
   // Try a handful of random room codes until we land on one that isn't
   // already taken. Collisions are astronomically rare at this alphabet/
   // length, so a small retry loop is simpler and safer than trying to
@@ -113,6 +129,7 @@ export async function POST(request: Request) {
       game_id: gameId,
       seat_number: 1,
       team_name: hostTeamName.trim(),
+      franchise_id: franchiseId,
       hint_purse_remaining: hintPurse,
       reconnect_token: reconnectToken,
       is_host: true,
