@@ -95,7 +95,9 @@ export async function POST(
   // round after round 1 just reads cards that already exist as hidden rows.
   const { data: pool, error: poolError } = await supabaseAdmin
     .from("players")
-    .select("id, short_name, full_name, country, is_overseas, role, position, batting_avg, bowling_avg");
+    .select(
+      "id, short_name, full_name, country, is_overseas, role, position, batting_avg, bowling_avg, tier, popular_name"
+    );
 
   if (poolError || !pool) {
     return NextResponse.json(
