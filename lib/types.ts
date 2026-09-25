@@ -14,6 +14,8 @@ export interface Game {
 
 export type PlayerRole = "Batter" | "Bowler" | "All-Rounder" | "WK-Batter";
 
+export type PlayerTier = "marquee" | "greats" | "popular" | "random";
+
 export interface Player {
   id: number;
   short_name: string;
@@ -24,6 +26,21 @@ export interface Player {
   position: string | null;
   batting_avg: number | null;
   bowling_avg: number | null;
+  tier: PlayerTier;
+  // Nullable override of full_name for a well-known public alias (e.g. "AB
+  // de Villiers"). Display code should prefer this over full_name -- see
+  // lib/playerDisplay.ts.
+  popular_name: string | null;
+}
+
+export interface Franchise {
+  id: string;
+  display_name: string;
+  abbreviation: string;
+  primary_color: string;
+  secondary_color: string;
+  logo_asset_path: string | null;
+  is_active: boolean;
 }
 
 export type RoundCardStatus = "hidden" | "picked";
