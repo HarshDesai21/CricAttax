@@ -1,6 +1,7 @@
 "use client";
 
-import { MysteryCard, REVEAL_STAGGER_MS } from "@/components/MysteryCard";
+import { MysteryCard, REVEAL_STAGGER_MS, type PrivateHint } from "@/components/MysteryCard";
+import { HintPanel } from "@/components/HintPanel";
 import { Panel, Heading, ErrorText, Button } from "@/components/ui";
 import { activeParticipantId } from "@/lib/draft";
 import type { Player, RoundCard } from "@/lib/types";
@@ -20,6 +21,16 @@ export interface DraftBoardProps {
   picking: boolean;
   advancing: boolean;
   error: string;
+  // Hints (iteration 2) -- all optional so this component still works if a
+  // caller doesn't wire hints up. hintsBySlot only ever holds entries for
+  // slots THIS browser paid to see -- see HintPanel/MysteryCard for the
+  // privacy reasoning.
+  hintPurseRemaining?: number;
+  hintUsedThisRound?: boolean;
+  hintsBySlot?: Map<number, PrivateHint>;
+  requestingHint?: boolean;
+  hintError?: string;
+  onRequestHint?: (tier: number) => void;
 }
 
 export function DraftBoard({
@@ -37,6 +48,12 @@ export function DraftBoard({
   picking,
   advancing,
   error,
+  hintPurseRemaining = 0,
+  hintUsedThisRound = false,
+  hintsBySlot,
+  requestingHint = false,
+  hintError = "",
+  onRequestHint,
 }: DraftBoardProps) {
   const claimedCount = roundCards.filter((c) => c.picked_by_participant_id !== null).length;
   const active = activeParticipantId(pickOrder, claimedCount);
@@ -48,6 +65,12 @@ export function DraftBoard({
   const roundComplete =
     roundCards.length === numPlayers && roundCards.every((c) => c.status === "picked");
   const isLastRound = currentRound >= numRounds;
+
+  // No hints on the round's last pick -- there's no choice left to inform,
+  // the last picker just gets whatever card remains. Mirrors the same
+  // check the hint API route enforces server-side.
+  const unclaimedCount = numPlayers - claimedCount;
+  const canBuyHint = isMyTurn && !roundComplete && unclaimedCount > 1 && !!onRequestHint;
 
   const slots = Array.from({ length: numPlayers }, (_, i) => i);
   const cardBySlot = new Map(roundCards.map((c) => [c.slot_index, c]));
@@ -78,9 +101,19 @@ export function DraftBoard({
         </Heading>
       </div>
 
+      {canBuyHint && (
+        <HintPanel
+          hintPurseRemaining={hintPurseRemaining}
+          hintUsedThisRound={hintUsedThisRound}
+          requestingHint={requestingHint}
+          onRequestHint={(tier) => onRequestHint?.(tier)}
+          error={hintError}
+        />
+      )}
+
       <Panel className="w-full">
         <div
-          className="grid justify-center gap-4 sm:gap-5"
+          className="grid justify-center gap-4 sm:gap-6"
           style={{
             // auto-fit + a fixed min/max card width (instead of a fixed
             // column count) is what makes this respond well from a phone
@@ -89,7 +122,14 @@ export function DraftBoard({
             // needing separate breakpoint-specific column counts, and the
             // min/max range is also what gives the extra breathing room
             // between cards that felt too tight before.
-            gridTemplateColumns: "repeat(auto-fit, minmax(96px, 140px))",
+            //
+            // Widened the max from 140px -- live-playtest feedback was that
+            // cards read too small/cramped on larger screens even though
+            // the same auto-fit approach works well on a phone. The min
+            // stays at 96px so narrow phones are unaffected; only wider
+            // viewports (which have room for auto-fit to grant each card
+            // more space) get noticeably bigger cards.
+            gridTemplateColumns: "repeat(auto-fit, minmax(96px, 190px))",
           }}
         >
           {slots.map((slotIndex) => {
@@ -112,6 +152,7 @@ export function DraftBoard({
                 isPickable={isMyTurn && !claimed && !picking}
                 onPick={() => onPick(slotIndex)}
                 revealDelayMs={rank * REVEAL_STAGGER_MS}
+                privateHint={state === "hidden" ? hintsBySlot?.get(slotIndex) ?? null : null}
               />
             );
           })}
