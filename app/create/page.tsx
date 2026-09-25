@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import {
   Heading,
@@ -10,7 +10,10 @@ import {
   FieldLabel,
   ErrorText,
 } from "@/components/ui";
+import { FranchisePicker } from "@/components/FranchisePicker";
 import { saveSession } from "@/lib/session";
+import { supabase } from "@/lib/supabase/client";
+import type { Franchise } from "@/lib/types";
 
 export default function CreateGamePage() {
   const router = useRouter();
@@ -18,8 +21,24 @@ export default function CreateGamePage() {
   const [hintPurse, setHintPurse] = useState(20);
   const [numRounds, setNumRounds] = useState(25);
   const [hostTeamName, setHostTeamName] = useState("");
+  const [franchises, setFranchises] = useState<Franchise[]>([]);
+  const [franchiseId, setFranchiseId] = useState<string | null>(null);
   const [error, setError] = useState("");
   const [submitting, setSubmitting] = useState(false);
+
+  // Franchises are public reference data (no game-specific state), so this
+  // just loads once -- the host is always the first pick, so there's never
+  // anything already "taken" at this step.
+  useEffect(() => {
+    (async () => {
+      const { data } = await supabase
+        .from("franchises")
+        .select("*")
+        .eq("is_active", true)
+        .order("display_name", { ascending: true });
+      setFranchises((data as Franchise[]) ?? []);
+    })();
+  }, []);
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -29,7 +48,13 @@ export default function CreateGamePage() {
       const res = await fetch("/api/games", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ numPlayers, hintPurse, numRounds, hostTeamName }),
+        body: JSON.stringify({
+          numPlayers,
+          hintPurse,
+          numRounds,
+          hostTeamName,
+          franchiseId,
+        }),
       });
       const data = await res.json();
       if (!res.ok) {
@@ -66,6 +91,17 @@ export default function CreateGamePage() {
                 required
               />
             </div>
+
+            {franchises.length > 0 && (
+              <div>
+                <FieldLabel>Franchise (optional)</FieldLabel>
+                <FranchisePicker
+                  franchises={franchises}
+                  selectedFranchiseId={franchiseId}
+                  onSelect={setFranchiseId}
+                />
+              </div>
+            )}
 
             <div>
               <FieldLabel>Number of players (2-5)</FieldLabel>
