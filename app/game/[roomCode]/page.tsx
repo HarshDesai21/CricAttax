@@ -5,6 +5,7 @@ import { useParams } from "next/navigation";
 import { supabase } from "@/lib/supabase/client";
 import { loadSession, saveSession } from "@/lib/session";
 import type { Game, Participant, Player, RoundCard, StoredSession } from "@/lib/types";
+import type { PrivateHint } from "@/components/MysteryCard";
 import {
   Heading,
   Panel,
@@ -43,6 +44,16 @@ export default function LobbyPage() {
   const [picking, setPicking] = useState(false);
   const [pickError, setPickError] = useState("");
   const [advancing, setAdvancing] = useState(false);
+
+  // Hints (iteration 2) -- hintsBySlot and hintUsedThisRound are local-only
+  // and deliberately never fetched from the server: a hint purchase is
+  // private to the browser that paid for it (see hint/route.ts), so there's
+  // nothing to sync via Realtime here. Both reset whenever current_round
+  // changes, since a hint only ever covers the round it was bought in.
+  const [hintsBySlot, setHintsBySlot] = useState<Map<number, PrivateHint>>(new Map());
+  const [hintUsedThisRound, setHintUsedThisRound] = useState(false);
+  const [requestingHint, setRequestingHint] = useState(false);
+  const [hintError, setHintError] = useState("");
 
   const loadParticipants = useCallback(async (gameId: string) => {
     const { data } = await supabase
@@ -207,6 +218,53 @@ export default function LobbyPage() {
     }
   }
 
+  // A hint's private overlay data and "already used this round" flag only
+  // ever apply to the round they were bought in -- this just resets local
+  // UI state to match an external value (current_round) changing, not a
+  // derived value React could compute during render instead.
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setHintsBySlot(new Map());
+    setHintUsedThisRound(false);
+    setHintError("");
+  }, [game?.current_round]);
+
+  async function handleRequestHint(tier: number) {
+    if (!session) return;
+    setHintError("");
+    setRequestingHint(true);
+    try {
+      const res = await fetch(`/api/games/${roomCode}/hint`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          participantId: session.participantId,
+          reconnectToken: session.reconnectToken,
+          tier,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setHintError(data.error ?? "Failed to buy that hint");
+        // A 409 here means the server already has a hint on file for this
+        // round (e.g. a stale client after a refresh) -- treat it the same
+        // as a successful purchase so the buttons don't stay live.
+        if (res.status === 409) setHintUsedThisRound(true);
+        return;
+      }
+      setHintUsedThisRound(true);
+      setHintsBySlot(
+        new Map(
+          (data.hints as (PrivateHint & { slotIndex: number })[]).map((h) => [h.slotIndex, h])
+        )
+      );
+    } catch {
+      setHintError("Network error -- try again");
+    } finally {
+      setRequestingHint(false);
+    }
+  }
+
   async function handlePick(slotIndex: number) {
     if (!session) return;
     setPickError("");
@@ -319,6 +377,14 @@ export default function LobbyPage() {
           picking={picking}
           advancing={advancing}
           error={pickError}
+          hintPurseRemaining={
+            participants.find((p) => p.id === session?.participantId)?.hint_purse_remaining ?? 0
+          }
+          hintUsedThisRound={hintUsedThisRound}
+          hintsBySlot={hintsBySlot}
+          requestingHint={requestingHint}
+          hintError={hintError}
+          onRequestHint={handleRequestHint}
         />
       ) : game.status === "complete" ? (
         <Panel className="w-full max-w-sm text-center">
