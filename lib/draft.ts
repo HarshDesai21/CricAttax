@@ -38,7 +38,7 @@ function weightedSampleWithoutReplacement<T>(
 // intended: the goal is recognizable names surfacing noticeably more often
 // without ever being guaranteed (still a pool-level nudge, still sampled
 // without replacement, still leaves trading as the fix for genuine bad luck).
-const INDIAN_WEIGHT = 3;
+const INDIAN_WEIGHT = 5;
 const OVERSEAS_WEIGHT = 1;
 const KEEPER_WEIGHT = 2;
 const OTHER_ROLE_WEIGHT = 1;
@@ -54,9 +54,9 @@ const OTHER_ROLE_WEIGHT = 1;
 //    asked specifically to increase foreign marquee/greats "while keeping
 //    others the same," not to retune every tier.
 const TIER_WEIGHT: Record<Player["tier"], number> = {
-  marquee: 7,
-  greats: 2.5,
-  popular: 2,
+  marquee: 15,
+  greats: 9,
+  popular: 3,
   random: 2,
 };
 
