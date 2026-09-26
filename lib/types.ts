@@ -33,6 +33,25 @@ export interface Player {
   popular_name: string | null;
 }
 
+export type PlayingXiSlotType = "xi" | "subs";
+
+// A participant's saved Playing XI arrangement -- one row per drafted
+// player, publicly readable (see schema.sql) so every player's Playing XI
+// is visible to the whole game in real time. `position` orders players
+// within their slot_type; for slot_type='xi' it also doubles as the
+// jersey number (position 0 -> shirt #1, etc.) per the confirmed visual
+// spec. A participant with no saved rows yet just hasn't opened/saved the
+// Playing XI page -- the client seeds a sane default (first 11 drafted
+// players by round order) and saves it on first load.
+export interface PlayingXiEntry {
+  id: string;
+  participant_id: string;
+  player_id: number;
+  slot_type: PlayingXiSlotType;
+  position: number;
+  added_at: string;
+}
+
 export interface Franchise {
   id: string;
   display_name: string;
