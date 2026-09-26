@@ -43,14 +43,36 @@ const OVERSEAS_WEIGHT = 1;
 const KEEPER_WEIGHT = 2;
 const OTHER_ROLE_WEIGHT = 1;
 
-// Popular and Random deliberately share the same weight -- kept as separate
-// tier labels for organizational clarity / future tuning room, not because
-// they currently behave differently in the sampler.
+// Reveal weighting v3 (live-playtest feedback after v2's first real draft:
+// still too many Random-tier players, and "a good amount of Indians" -- i.e.
+// not enough big overseas names surfacing). Two changes from v2:
+//
+// 1. Marquee raised further above the rest -- v2 had it at 4x, only a
+//    little above Greats' 2.5x. It should read as clearly the standout
+//    tier, not just "somewhat more likely."
+// 2. Greats/Popular/Random left exactly as they were in v2 -- the user
+//    asked specifically to increase foreign marquee/greats "while keeping
+//    others the same," not to retune every tier.
 const TIER_WEIGHT: Record<Player["tier"], number> = {
-  marquee: 4,
+  marquee: 7,
   greats: 2.5,
   popular: 2,
   random: 2,
+};
+
+// Targeted overseas-only boost, layered on TOP of the tier weight above --
+// this is the "increase the foreign marquees and greats" ask specifically.
+// It only ever multiplies an OVERSEAS player's weight; an Indian player of
+// the same tier gets no extra multiplier here (their weight is still just
+// INDIAN_WEIGHT x roleWeight x TIER_WEIGHT, completely unchanged from v2),
+// and an overseas Popular/Random player also gets no extra multiplier (not
+// in this map, so it falls through to the `?? 1` default). The net effect:
+// an overseas marquee player now has to overcome the 3:1 Indian:Overseas
+// nationality tilt by a much wider margin than before, without touching
+// that base tilt or any other tier's numbers.
+const OVERSEAS_TIER_BOOST: Partial<Record<Player["tier"], number>> = {
+  marquee: 2.5,
+  greats: 1.75,
 };
 
 export function playerRevealWeight(
@@ -59,7 +81,8 @@ export function playerRevealWeight(
   const nationalityWeight = player.is_overseas ? OVERSEAS_WEIGHT : INDIAN_WEIGHT;
   const roleWeight = player.role === "WK-Batter" ? KEEPER_WEIGHT : OTHER_ROLE_WEIGHT;
   const tierWeight = TIER_WEIGHT[player.tier];
-  return nationalityWeight * roleWeight * tierWeight;
+  const overseasTierBoost = player.is_overseas ? (OVERSEAS_TIER_BOOST[player.tier] ?? 1) : 1;
+  return nationalityWeight * roleWeight * tierWeight * overseasTierBoost;
 }
 
 function shuffle<T>(items: T[]): T[] {
