@@ -4,7 +4,15 @@ import { useEffect, useState, useCallback } from "react";
 import { useParams } from "next/navigation";
 import { supabase } from "@/lib/supabase/client";
 import { loadSession, saveSession } from "@/lib/session";
-import type { Game, Participant, Player, RoundCard, StoredSession } from "@/lib/types";
+import type {
+  Franchise,
+  Game,
+  Participant,
+  PlayingXiEntry,
+  Player,
+  RoundCard,
+  StoredSession,
+} from "@/lib/types";
 import type { PrivateHint } from "@/components/MysteryCard";
 import {
   Heading,
@@ -17,6 +25,7 @@ import {
 } from "@/components/ui";
 import { DraftBoard } from "@/components/DraftBoard";
 import { SquadTracker } from "@/components/SquadTracker";
+import { PlayingXIBoard } from "@/components/PlayingXI";
 
 export default function LobbyPage() {
   const params = useParams<{ roomCode: string }>();
@@ -41,6 +50,10 @@ export default function LobbyPage() {
   // stale closure over "current round" can't get this out of sync.
   const [roundCards, setRoundCards] = useState<RoundCard[]>([]);
   const [playersCache, setPlayersCache] = useState<Map<number, Player>>(new Map());
+  // Franchise reference data (colors + logos, for SquadTracker/Playing XI
+  // theming) -- public, rarely changes, so a single fetch on mount is
+  // enough; no Realtime subscription needed for it.
+  const [franchises, setFranchises] = useState<Franchise[]>([]);
   const [picking, setPicking] = useState(false);
   const [pickError, setPickError] = useState("");
   const [advancing, setAdvancing] = useState(false);
@@ -54,6 +67,12 @@ export default function LobbyPage() {
   const [hintUsedThisRound, setHintUsedThisRound] = useState(false);
   const [requestingHint, setRequestingHint] = useState(false);
   const [hintError, setHintError] = useState("");
+
+  // Playing XI (mini-iteration pulled forward from iteration 3, ahead of
+  // Trading). Public within the game -- like round_cards, loaded once and
+  // kept in sync via the same Realtime channel below.
+  const [playingXi, setPlayingXi] = useState<PlayingXiEntry[]>([]);
+  const [playingXiError, setPlayingXiError] = useState("");
 
   const loadParticipants = useCallback(async (gameId: string) => {
     const { data } = await supabase
@@ -72,6 +91,21 @@ export default function LobbyPage() {
       .order("round_number", { ascending: true })
       .order("slot_index", { ascending: true });
     setRoundCards((data as RoundCard[]) ?? []);
+  }, []);
+
+  const loadPlayingXi = useCallback(async (gameId: string) => {
+    const { data } = await supabase
+      .from("playing_xi")
+      .select("*, participants!inner(game_id)")
+      .eq("participants.game_id", gameId);
+    setPlayingXi((data as PlayingXiEntry[]) ?? []);
+  }, []);
+
+  useEffect(() => {
+    (async () => {
+      const { data } = await supabase.from("franchises").select("*");
+      setFranchises((data as Franchise[]) ?? []);
+    })();
   }, []);
 
   useEffect(() => {
@@ -101,6 +135,9 @@ export default function LobbyPage() {
       if (gameRow.status !== "lobby") {
         await loadRoundCards(gameRow.id);
       }
+      if (gameRow.status === "complete") {
+        await loadPlayingXi(gameRow.id);
+      }
       setLoading(false);
 
       channel = supabase
@@ -127,6 +164,7 @@ export default function LobbyPage() {
             const updated = payload.new as Game;
             setGame(updated);
             if (updated.status !== "lobby") loadRoundCards(gameRow.id);
+            if (updated.status === "complete") loadPlayingXi(gameRow.id);
           }
         )
         .on(
@@ -138,6 +176,21 @@ export default function LobbyPage() {
             filter: `game_id=eq.${gameRow.id}`,
           },
           () => loadRoundCards(gameRow.id)
+        )
+        .on(
+          "postgres_changes",
+          {
+            // playing_xi has no game_id column of its own (it's scoped via
+            // participant_id -> participants.game_id), so it can't carry a
+            // server-side filter the way the tables above do -- this
+            // channel is already scoped to one game/room, so just reload on
+            // any change and let loadPlayingXi's own game_id-scoped query
+            // do the real filtering.
+            event: "*",
+            schema: "public",
+            table: "playing_xi",
+          },
+          () => loadPlayingXi(gameRow.id)
         )
         .subscribe((status, err) => {
           // Realtime subscriptions fail silently by default -- without this,
@@ -159,7 +212,7 @@ export default function LobbyPage() {
     return () => {
       if (channel) supabase.removeChannel(channel);
     };
-  }, [roomCode, loadParticipants, loadRoundCards]);
+  }, [roomCode, loadParticipants, loadRoundCards, loadPlayingXi]);
 
   // Backfills real player details for any newly-revealed cards. round_cards
   // itself only ever carries a player_id -- the name/country/role/averages
@@ -314,6 +367,34 @@ export default function LobbyPage() {
     }
   }
 
+  async function handleSavePlayingXi(xi: number[], subs: number[]) {
+    if (!session) return;
+    setPlayingXiError("");
+    try {
+      const res = await fetch(`/api/games/${roomCode}/playing-xi`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          participantId: session.participantId,
+          reconnectToken: session.reconnectToken,
+          xi,
+          subs,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setPlayingXiError(data.error ?? "Failed to save your Playing XI");
+        return;
+      }
+      // The server is now the source of truth for this arrangement --
+      // reload immediately rather than waiting on the Realtime round-trip,
+      // so the drag feels responsive even on a slow connection.
+      if (game) await loadPlayingXi(game.id);
+    } catch {
+      setPlayingXiError("Network error -- try again");
+    }
+  }
+
   async function handleStart() {
     if (!session) return;
     setError("");
@@ -350,10 +431,25 @@ export default function LobbyPage() {
   const seatsTotal = game.num_players;
   const canStart = session?.isHost && seatsFilled === seatsTotal && game.status === "lobby";
 
-  const isDraftPhase = game.status === "drafting" || game.status === "complete";
+  const myParticipant = participants.find((p) => p.id === session?.participantId) ?? null;
 
   return (
     <div className="flex min-h-screen flex-col items-center gap-6 px-4 py-10 sm:px-6 sm:py-20">
+      {/* Fixed, always-on-screen hint purse -- per feedback, the purse
+          number used to only appear inside HintPanel, which is itself only
+          shown during that participant's own turn. It needs to be visible
+          throughout the draft, not just then. */}
+      {game.status === "drafting" && myParticipant && (
+        <div className="fixed right-3 top-3 z-20 rounded-lg border border-gold/50 bg-stock/90 px-3 py-1.5 text-center shadow-lg shadow-black/40 backdrop-blur sm:right-4 sm:top-4 sm:px-4 sm:py-2">
+          <p className="font-body text-[9px] uppercase tracking-wide text-silver/50 sm:text-[10px]">
+            Hint purse
+          </p>
+          <p className="font-display text-lg leading-tight text-gold-light sm:text-xl">
+            {myParticipant.hint_purse_remaining}cr
+          </p>
+        </div>
+      )}
+
       <div className="text-center">
         <p className="mb-1 font-body text-sm uppercase tracking-wide text-silver/60">
           Room code
@@ -377,9 +473,7 @@ export default function LobbyPage() {
           picking={picking}
           advancing={advancing}
           error={pickError}
-          hintPurseRemaining={
-            participants.find((p) => p.id === session?.participantId)?.hint_purse_remaining ?? 0
-          }
+          hintPurseRemaining={myParticipant?.hint_purse_remaining ?? 0}
           hintUsedThisRound={hintUsedThisRound}
           hintsBySlot={hintsBySlot}
           requestingHint={requestingHint}
@@ -387,13 +481,16 @@ export default function LobbyPage() {
           onRequestHint={handleRequestHint}
         />
       ) : game.status === "complete" ? (
-        <Panel className="w-full max-w-sm text-center">
-          <Heading className="mb-2 text-2xl">Draft complete!</Heading>
-          <p className="font-body text-silver/70">
-            Every round has been picked and revealed. The Playing XI builder
-            and trading aren&apos;t built yet -- that&apos;s next.
-          </p>
-        </Panel>
+        <PlayingXIBoard
+          participants={participants}
+          roundCards={roundCards}
+          players={playersCache}
+          franchises={franchises}
+          playingXi={playingXi}
+          myParticipantId={session?.participantId ?? null}
+          onSaveMine={handleSavePlayingXi}
+          saveError={playingXiError}
+        />
       ) : (
         <Panel className="w-full max-w-sm">
           <div className="mb-4 flex items-center justify-between">
@@ -463,11 +560,12 @@ export default function LobbyPage() {
         </Panel>
       )}
 
-      {isDraftPhase && (
+      {game.status === "drafting" && (
         <SquadTracker
           participants={participants}
           roundCards={roundCards}
           players={playersCache}
+          franchises={franchises}
         />
       )}
     </div>
