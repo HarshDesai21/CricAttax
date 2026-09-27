@@ -54,8 +54,8 @@ const OTHER_ROLE_WEIGHT = 1;
 //    asked specifically to increase foreign marquee/greats "while keeping
 //    others the same," not to retune every tier.
 const TIER_WEIGHT: Record<Player["tier"], number> = {
-  marquee: 15,
-  greats: 9,
+  marquee: 30,
+  greats: 14,
   popular: 3,
   random: 2,
 };
