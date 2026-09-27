@@ -49,6 +49,19 @@ function signature(lists: { xi: number[]; subs: number[] }): string {
   return `${lists.xi.join(",")}|${lists.subs.join(",")}`;
 }
 
+// Builds a claude.ai link with every team's Playing XI preloaded as a prompt
+// (claude.ai/new?q=... prefills the composer), asking Claude to judge them.
+function claudePromptUrl(xis: string[][]): string {
+  const sections = xis.map((names, i) =>
+    [`Team ${i + 1}`, ...names.map((name, n) => `${n + 1}. ${name}`)].join("\n")
+  );
+  const prompt = [
+    ...sections,
+    "Out of these teams, which of these is the best all-time IPL XI? Rate each team out of 10.",
+  ].join("\n\n");
+  return `https://claude.ai/new?q=${encodeURIComponent(prompt)}`;
+}
+
 export interface PlayingXIBoardProps {
   participants: Participant[];
   roundCards: RoundCard[];
@@ -72,6 +85,16 @@ export function PlayingXIBoard({
 }: PlayingXIBoardProps) {
   const franchiseById = new Map(franchises.map((f) => [f.id, f]));
   const bySeat = [...participants].sort((a, b) => a.seat_number - b.seat_number);
+  const claudeUrl = claudePromptUrl(
+    bySeat.map((participant) =>
+      playingXi
+        .filter((e) => e.participant_id === participant.id && e.slot_type === "xi")
+        .sort((a, b) => a.position - b.position)
+        .map((e) => players.get(e.player_id))
+        .filter((p) => p != null)
+        .map(displayName)
+    )
+  );
 
   return (
     <div className="w-full max-w-5xl lg:max-w-6xl">
@@ -82,6 +105,14 @@ export function PlayingXIBoard({
         <p className="mt-0.5 font-body text-[11px] text-silver/40 lg:text-xs">
           Drag your own squad between XI and Subs -- everyone can see everyone&apos;s lineup.
         </p>
+        <a
+          href={claudeUrl}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="mt-2 inline-block rounded border border-gold/60 px-4 py-1.5 font-body text-xs font-semibold uppercase tracking-wide text-gold-light transition hover:bg-gold/10 lg:text-sm"
+        >
+          Ask Claude to rate the XIs
+        </a>
       </div>
       <ErrorText>{saveError}</ErrorText>
       <div className="mt-2 flex flex-wrap justify-center gap-4 lg:gap-5">
