@@ -71,8 +71,8 @@ const TIER_WEIGHT: Record<Player["tier"], number> = {
 // nationality tilt by a much wider margin than before, without touching
 // that base tilt or any other tier's numbers.
 const OVERSEAS_TIER_BOOST: Partial<Record<Player["tier"], number>> = {
-  marquee: 2.5,
-  greats: 1.75,
+  marquee: 5,
+  greats: 3,
 };
 
 export function playerRevealWeight(
